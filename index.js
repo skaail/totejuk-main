@@ -1,68 +1,85 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta http-equiv="X-UA-Compatible" content="IE=edge">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Leaderboard</title>
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.2.2/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-Zenh87qX5JnK2Jl0vWa8Ck2rdkQ2Bzep5IDxbcnCeuOxjzrPF/et3URy9Bv1WTRi" crossorigin="anonymous">
-  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.2.2/dist/js/bootstrap.bundle.min.js" integrity="sha384-OERcA2EqjJCMA+/3y+gxIOqMEjwtxJY7qPCqsdltbNJuaOe923+mo//f6V8Qbsw3" crossorigin="anonymous"></script>
-  <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
+const express = require('express');
+const app = express();
+const { initializeApp, applicationDefault, cert } = require('firebase-admin/app');
+const { getFirestore, Timestamp, FieldValue } = require('firebase-admin/firestore');
+const path = require('path')
 
-  <style type="text/css">
-    .tg  {border-collapse:collapse;border-spacing:0;}
-    .tg td{border-color:black;border-style:solid;border-width:1px;font-family:Arial, sans-serif;font-size:14px;
-      overflow:hidden;padding:10px 5px;word-break:normal;}
-    .tg th{border-color:black;border-style:solid;border-width:1px;font-family:Arial, sans-serif;font-size:14px;
-      font-weight:normal;overflow:hidden;padding:10px 5px;word-break:normal;}
-    .tg .tg-0pky{border-color:inherit;text-align:left;vertical-align:top}
-</style>
-</head>
-<body>
-      <% for(var i=0; i < data.length; i++) { %>
-        <div>
-          <img src='<%= data[i].Img %>' data-id = "<%= data[i].id %>" ><%= data[i].Nome %> e <%= data[i].id %></img>
-        </div>
-     <% } %>
+const http = require('http');
+const server = http.createServer(app);
+const { Server } = require("socket.io");
+const io = new Server(server);
 
-</body>
-<script>
-function sortTable() {
-var tables, sort, i, x, y, tableSort;
-tables = document.getElementById("sortTable");
-sort= true;
-while (sort) {
-sort = false;
-tblrow = tables.rows;
-for (i = 1; i < (tblrow.length - 1); i++) {
-tableSort = false;
-x = tblrow[i].getElementsByTagName("td")[2];
-y = tblrow[i + 1].getElementsByTagName("td")[2];
-if (x.innerHTML.toUpperCase() < y.innerHTML.toUpperCase()) {
-tableSort = true;
-break;
-}
-}
-if (tableSort) {
-tblrow[i].parentNode.insertBefore(tblrow[i + 1], tblrow[i]);
-sort = true;
-}
-}
-}
+app.set('view engine','ejs');
+app.set('views', path.join(__dirname, 'views'));
 
-</script>
+var admin = require("firebase-admin");
 
-<script src="/socket.io/socket.io.js"></script>
-<script>
+admin.initializeApp({
+    credential: admin.credential.cert(require('./key/admin.json')),
+  databaseURL: "https://porn-roll-default-rtdb.firebaseio.com"
+});
 
+const db = getFirestore();
 
+let rank
 
-  var socket = io();
+app.get("/", async (req, res)=> {
+    try{
+        const videoRef = db.collection("musicas")
+        const response = await videoRef.orderBy("Qtd", "desc").get()
+        let responseArr = []
+        response.forEach(doc => {
+            responseArr.push({...doc.data(), id: doc.id})
+        })
+        responseArr.sort(function(a, b) {
+            return a - b;
+          });
+        console.log(responseArr)
+        res.render('index', {data: responseArr})
 
-  socket.on('updateTable', (data) => {
-      console.log(data);
-  });
-</script>
+        rank = responseArr
+    }catch(err){
+        res.send(err)
+    }
+})
 
+app.get("/update/:id", async (req, res)=> {
+    try{
+        db.collection("musicas").doc(req.params.id).update({Qtd: admin.firestore.FieldValue.increment(1)});
+        res.render('update')
+    }catch(err){
+        res.send(err)
+        
+    }
+})
 
-</html>
+app.get("/imagens", async (req, res)=> {
+    try{
+        const videoRef = db.collection("musicas")
+        const response = await videoRef.orderBy("Qtd", "desc").get()
+        let responseArr = []
+        response.forEach(doc => {
+            responseArr.push({...doc.data(), id: doc.id})
+        })
+        responseArr.sort(function(a, b) {
+            return a - b;
+          });
+        console.log(responseArr)
+        res.render('image', {data: responseArr})
+
+        rank = responseArr
+    }catch(err){
+        res.send(err)
+    }
+
+})
+
+io.on('connection', (socket) => {
+    console.log('a user connected');
+    socket.on('updated', () => {
+        io.emit("updateTable", {data: rank})
+        console.log('updated');
+      });
+});
+
+server.listen(process.env.PORT || 5000, () => {console.log("Express server listening on port 5000")});
